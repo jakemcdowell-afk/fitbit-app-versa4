@@ -1,3 +1,151 @@
-<svg class="background">
-  <text id="demotext" x="50%" y="50%+15">Hello World!</text>
-</svg>
+import document from "document";
+import { display } from "display";
+import fs from "fs";
+
+const W = 336;
+const H = 336;
+
+const GRAVITY      = 0.5;
+const JUMP_FORCE   = -8;
+const PIPE_SPEED   = 3;
+const PIPE_WIDTH   = 40;
+const PIPE_GAP     = 90;
+const PIPE_SPAWN_X = W + 10;
+const PIPE_INTERVAL= 90;
+
+const BIRD_X  = 80;
+const BIRD_W  = 28;
+const BIRD_H  = 20;
+
+const HS_FILE = "highscore.txt";
+
+function loadHighScore() {
+  try {
+    const data = fs.readFileSync(HS_FILE, "ascii");
+    return parseInt(data) || 0;
+  } catch (e) { return 0; }
+}
+
+function saveHighScore(score) {
+  try { fs.writeFileSync(HS_FILE, String(score), "ascii"); } catch (e) {}
+}
+
+const birdEl        = document.getElementById("bird");
+const pipe1Top      = document.getElementById("pipe1top");
+const pipe1Bot      = document.getElementById("pipe1bot");
+const pipe2Top      = document.getElementById("pipe2top");
+const pipe2Bot      = document.getElementById("pipe2bot");
+const scoreTxt      = document.getElementById("score");
+const hsTxt         = document.getElementById("highscore");
+const screenGame    = document.getElementById("screen-game");
+const screenStart   = document.getElementById("screen-start");
+const screenOver    = document.getElementById("screen-over");
+const finalScoreTxt = document.getElementById("final-score");
+const finalHsTxt    = document.getElementById("final-hs");
+const newBestTxt    = document.getElementById("new-best");
+
+let birdY, birdVel, pipes, score, highScore, frameCount, gameLoop, state;
+
+function initGame() {
+  birdY = H / 2; birdVel = 0; pipes = []; score = 0; frameCount = 0;
+  highScore = loadHighScore();
+  hsTxt.text = "Best: " + highScore;
+}
+
+const pipeEls = [
+  { top: pipe1Top, bot: pipe1Bot },
+  { top: pipe2Top, bot: pipe2Bot },
+];
+
+function spawnPipe() {
+  const gapY = 60 + Math.random() * (H - 120 - PIPE_GAP);
+  pipes.push({ x: PIPE_SPAWN_X, gapY, scored: false });
+}
+
+function updatePipeEl(idx, pipe) {
+  if (idx >= pipeEls.length) return;
+  const el = pipeEls[idx];
+  el.top.setAttribute("x", pipe.x); el.top.setAttribute("y", 0);
+  el.top.setAttribute("width", PIPE_WIDTH); el.top.setAttribute("height", pipe.gapY);
+  el.bot.setAttribute("x", pipe.x); el.bot.setAttribute("y", pipe.gapY + PIPE_GAP);
+  el.bot.setAttribute("width", PIPE_WIDTH); el.bot.setAttribute("height", H - pipe.gapY - PIPE_GAP);
+}
+
+function hidePipeEl(idx) {
+  if (idx >= pipeEls.length) return;
+  pipeEls[idx].top.setAttribute("width", 0);
+  pipeEls[idx].bot.setAttribute("width", 0);
+}
+
+function checkCollision() {
+  if (birdY - BIRD_H/2 < 0 || birdY + BIRD_H/2 > H) return true;
+  for (const pipe of pipes) {
+    if ((BIRD_X + BIRD_W/2 - 4) > pipe.x && (BIRD_X - BIRD_W/2 + 4) < pipe.x + PIPE_WIDTH) {
+      if ((birdY - BIRD_H/2 + 4) < pipe.gapY || (birdY + BIRD_H/2 - 4) > pipe.gapY + PIPE_GAP) return true;
+    }
+  }
+  return false;
+}
+
+function update() {
+  frameCount++;
+  if (frameCount % PIPE_INTERVAL === 0) spawnPipe();
+  birdVel += GRAVITY; birdY += birdVel;
+  birdEl.setAttribute("cy", birdY);
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    pipes[i].x -= PIPE_SPEED;
+    if (!pipes[i].scored && pipes[i].x + PIPE_WIDTH < BIRD_X) {
+      pipes[i].scored = true; score++; scoreTxt.text = score;
+    }
+    if (pipes[i].x + PIPE_WIDTH < 0) pipes.splice(i, 1);
+  }
+  for (let i = 0; i < pipeEls.length; i++) {
+    if (i < pipes.length) updatePipeEl(i, pipes[i]);
+    else hidePipeEl(i);
+  }
+  if (checkCollision()) endGame();
+}
+
+function showStart() {
+  state = "start";
+  screenStart.style.display = "inline";
+  screenGame.style.display = "none";
+  screenOver.style.display = "none";
+  initGame();
+}
+
+function startGame() {
+  state = "playing";
+  screenStart.style.display = "none";
+  screenGame.style.display = "inline";
+  screenOver.style.display = "none";
+  scoreTxt.text = "0"; hsTxt.text = "Best: " + highScore;
+  hidePipeEl(0); hidePipeEl(1);
+  gameLoop = setInterval(update, 33);
+}
+
+function endGame() {
+  clearInterval(gameLoop); state = "over";
+  let newBest = false;
+  if (score > highScore) { highScore = score; saveHighScore(highScore); newBest = true; }
+  finalScoreTxt.text = "Score: " + score;
+  finalHsTxt.text = "Best: " + highScore;
+  newBestTxt.style.display = newBest ? "inline" : "none";
+  screenGame.style.display = "none";
+  screenOver.style.display = "inline";
+}
+
+document.onkeypress = function(evt) {
+  if (evt.key === "back") {
+    if (state === "start") startGame();
+    else if (state === "playing") birdVel = JUMP_FORCE;
+    else if (state === "over") showStart();
+  }
+};
+
+display.addEventListener("change", () => {
+  if (!display.on && state === "playing") endGame();
+});
+
+showStart();
+
